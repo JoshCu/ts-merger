@@ -1,7 +1,24 @@
 [package]
-name = "ngen_merge"
+name = "ts-merger"
 version = "0.1.0"
 edition = "2021"
+authors = ["Josh Cunningham <josh.cu@gmail.com>"]
+description = "A multi-threaded tool for processing and aggregating time series data files"
+readme = "README.md"
+license = "AGPL-3.0-or-later"
+keywords = ["time-series", "data-processing", "csv", "aggregation"]
+categories = ["command-line-utilities", "science"]
 
 [dependencies]
 indicatif = "0.17.8"
+
+[profile.release]
+opt-level = 3
+lto = true
+codegen-units = 1
+panic = 'abort'
+strip = true
+
+[[bin]]
+name = "ts-merger"
+path = "src/main.rs"

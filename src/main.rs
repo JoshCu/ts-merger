@@ -1,12 +1,12 @@
-use std::fs::{self, File};
-use std::collections::HashMap;
-use std::path::Path;
-use std::io::{BufRead, BufReader, Write};
-use std::thread;
-use std::sync::mpsc;
-use std::env;
-use std::process;
 use indicatif::ProgressBar;
+use std::collections::HashMap;
+use std::env;
+use std::fs::{self, File};
+use std::io::{BufRead, BufReader, Write};
+use std::path::Path;
+use std::process;
+use std::sync::mpsc;
+use std::thread;
 struct TimeSeriesRow {
     index: String,
     timestamp: String,
@@ -14,9 +14,9 @@ struct TimeSeriesRow {
 }
 
 fn main() {
-    let dir_path = get_directory_path();
+    let (dir_path, file_extension) = validate_input_args();
     let file_counts = count_files_by_base_name(&dir_path);
-    
+
     let num_threads = thread::available_parallelism().unwrap().get();
     let chunk_size = (file_counts.len() + num_threads - 1) / num_threads;
     let (tx, rx) = mpsc::channel();
@@ -24,22 +24,24 @@ fn main() {
     let pb = ProgressBar::new(file_counts.len().try_into().unwrap());
 
     // Spawn threads and divide work
-    let handles: Vec<_> = file_counts.into_iter()
+    let handles: Vec<_> = file_counts
+        .into_iter()
         .collect::<Vec<_>>()
         .chunks(chunk_size)
         .map(|chunk| {
             let chunk = chunk.to_vec();
             let dir_path = dir_path.clone();
+            let file_extension = file_extension.clone();
             let tx = tx.clone();
-            
+
             thread::spawn(move || {
                 for (base_name, count) in chunk {
                     tx.send(format!("{}\t{}", base_name, count)).unwrap();
-                    
+
                     if count == 1 {
-                        rename_single_file(&dir_path, &base_name);
+                        rename_single_file(&dir_path, &base_name, &file_extension);
                     } else {
-                        process_multiple_files(&dir_path, &base_name);
+                        process_multiple_files(&dir_path, &base_name, &file_extension);
                     }
                 }
             })
@@ -60,18 +62,21 @@ fn main() {
     }
 }
 
-fn get_directory_path() -> String {
+fn validate_input_args() -> (String, String) {
     let args: Vec<String> = env::args().collect();
-    
+
     match args.len() {
         // No arguments provided
         1 => {
             eprintln!("Error: Please provide a directory path");
-            eprintln!("Usage: {} <directory_path>", args[0]);
+            eprintln!(
+                "Usage: {} <directory_path> <optional_file_extension>",
+                args[0]
+            );
             process::exit(1);
-        },
+        }
         // Correct usage with one argument
-        2 => {
+        2..=3 => {
             let path = Path::new(&args[1]);
             if !path.exists() {
                 eprintln!("Error: Directory '{}' does not exist", args[1]);
@@ -81,12 +86,18 @@ fn get_directory_path() -> String {
                 eprintln!("Error: '{}' is not a directory", args[1]);
                 process::exit(1);
             }
-            args[1].clone()
-        },
+            match args.get(2) {
+                Some(_) => (args[1].clone(), args[2].clone()),
+                None => (args[1].clone(), ".csv".to_string()),
+            }
+        }
         // Too many arguments
         _ => {
             eprintln!("Error: Too many arguments");
-            eprintln!("Usage: {} <directory_path>", args[0]);
+            eprintln!(
+                "Usage: {} <directory_path> <optional_file_extension>",
+                args[0]
+            );
             process::exit(1);
         }
     }
@@ -97,7 +108,7 @@ fn count_files_by_base_name(dir_path: &str) -> HashMap<String, usize> {
     if let Ok(paths) = fs::read_dir(dir_path) {
         for entry in paths.filter_map(Result::ok) {
             if let Ok(filename) = entry.file_name().into_string() {
-                if let Some(base_name) = filename.split("_rank").next() {
+                if let Some(base_name) = filename.split("_").next() {
                     *counts.entry(base_name.to_string()).or_insert(0) += 1;
                 }
             }
@@ -106,7 +117,7 @@ fn count_files_by_base_name(dir_path: &str) -> HashMap<String, usize> {
     counts
 }
 
-fn process_multiple_files(dir_path: &str, base_name: &str) {
+fn process_multiple_files(dir_path: &str, base_name: &str, file_extension: &str) {
     // Get all files for this nexus
     let mut files = Vec::new();
     if let Ok(paths) = fs::read_dir(dir_path) {
@@ -159,7 +170,7 @@ fn process_multiple_files(dir_path: &str, base_name: &str) {
 
     // Write summed output
     if !summed_data.is_empty() {
-        let output_path = Path::new(dir_path).join(format!("{}.csv", base_name));
+        let output_path = Path::new(dir_path).join(format!("{}{}", base_name, file_extension));
         if let Ok(output) = File::create(&output_path) {
             let mut writer = std::io::BufWriter::new(output);
             for row in &summed_data {
@@ -174,12 +185,13 @@ fn process_multiple_files(dir_path: &str, base_name: &str) {
     }
 }
 
-fn rename_single_file(dir_path: &str, base_name: &str) {
+fn rename_single_file(dir_path: &str, base_name: &str, file_extension: &str) {
     if let Ok(paths) = fs::read_dir(dir_path) {
         for entry in paths.filter_map(Result::ok) {
             if let Ok(filename) = entry.file_name().into_string() {
                 if filename.starts_with(base_name) {
-                    let new_path = Path::new(dir_path).join(format!("{}.csv", base_name));
+                    let new_path =
+                        Path::new(dir_path).join(format!("{}{}", base_name, file_extension));
                     let _ = fs::rename(entry.path(), new_path);
                     break;
                 }
