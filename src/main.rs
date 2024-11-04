@@ -4,7 +4,9 @@ use std::path::Path;
 use std::io::{BufRead, BufReader, Write};
 use std::thread;
 use std::sync::mpsc;
-
+use std::env;
+use std::process;
+use indicatif::ProgressBar;
 struct TimeSeriesRow {
     index: String,
     timestamp: String,
@@ -12,12 +14,14 @@ struct TimeSeriesRow {
 }
 
 fn main() {
-    let dir_path = "/home/josh/code/output_reformat/test/";
-    let file_counts = count_files_by_base_name(dir_path);
+    let dir_path = get_directory_path();
+    let file_counts = count_files_by_base_name(&dir_path);
     
     let num_threads = thread::available_parallelism().unwrap().get();
     let chunk_size = (file_counts.len() + num_threads - 1) / num_threads;
     let (tx, rx) = mpsc::channel();
+
+    let pb = ProgressBar::new(file_counts.len().try_into().unwrap());
 
     // Spawn threads and divide work
     let handles: Vec<_> = file_counts.into_iter()
@@ -25,7 +29,7 @@ fn main() {
         .chunks(chunk_size)
         .map(|chunk| {
             let chunk = chunk.to_vec();
-            let dir_path = dir_path.to_string();
+            let dir_path = dir_path.clone();
             let tx = tx.clone();
             
             thread::spawn(move || {
@@ -46,13 +50,45 @@ fn main() {
     drop(tx);
 
     // Print progress messages as they come in
-    for msg in rx {
-        println!("{}", msg);
+    for _msg in rx {
+        pb.inc(1);
     }
 
     // Wait for all threads to complete
     for handle in handles {
         handle.join().unwrap();
+    }
+}
+
+fn get_directory_path() -> String {
+    let args: Vec<String> = env::args().collect();
+    
+    match args.len() {
+        // No arguments provided
+        1 => {
+            eprintln!("Error: Please provide a directory path");
+            eprintln!("Usage: {} <directory_path>", args[0]);
+            process::exit(1);
+        },
+        // Correct usage with one argument
+        2 => {
+            let path = Path::new(&args[1]);
+            if !path.exists() {
+                eprintln!("Error: Directory '{}' does not exist", args[1]);
+                process::exit(1);
+            }
+            if !path.is_dir() {
+                eprintln!("Error: '{}' is not a directory", args[1]);
+                process::exit(1);
+            }
+            args[1].clone()
+        },
+        // Too many arguments
+        _ => {
+            eprintln!("Error: Too many arguments");
+            eprintln!("Usage: {} <directory_path>", args[0]);
+            process::exit(1);
+        }
     }
 }
 
