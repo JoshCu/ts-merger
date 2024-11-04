@@ -5,11 +5,13 @@ A multi-threaded tool for combining and processing time series data files.
 ## Quick Start
 
 ```bash
+# installation (assuming rust and cargo is installed)
+cargo install ts-merger
 # Basic usage with default .csv extension
-ts-merge /path/to/data
+ts-merger /path/to/data
 
 # Custom file extension
-ts-merge /path/to/data .txt
+ts-merger /path/to/data .txt
 ```
 
 ## Example
