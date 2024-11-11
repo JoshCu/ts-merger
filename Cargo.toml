@@ -1,6 +1,6 @@
 [package]
 name = "ts-merger"
-version = "0.1.0"
+version = "0.2.0"
 edition = "2021"
 authors = ["Josh Cunningham <josh.cu@gmail.com>"]
 description = "A multi-threaded tool for processing and aggregating time series data files"
