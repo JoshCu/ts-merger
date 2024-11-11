@@ -14,8 +14,8 @@ struct TimeSeriesRow {
 }
 
 fn main() {
-    let (dir_path, file_extension) = validate_input_args();
-    let file_counts = count_files_by_base_name(&dir_path);
+    let (dir_path, file_extension, file_filter) = validate_input_args();
+    let file_counts = count_files_by_base_name(&dir_path, &file_filter);
 
     let num_threads = thread::available_parallelism().unwrap().get();
     let chunk_size = (file_counts.len() + num_threads - 1) / num_threads;
@@ -62,7 +62,7 @@ fn main() {
     }
 }
 
-fn validate_input_args() -> (String, String) {
+fn validate_input_args() -> (String, String, String) {
     let args: Vec<String> = env::args().collect();
 
     match args.len() {
@@ -70,13 +70,13 @@ fn validate_input_args() -> (String, String) {
         1 => {
             eprintln!("Error: Please provide a directory path");
             eprintln!(
-                "Usage: {} <directory_path> <optional_file_extension>",
-                args[0]
+                "Usage: {} <directory_path> <optional_file_extension> <optional_inputs_filter> \n e.g. {} /path/to/directory .csv nexus- \n to only process files that start with 'nexus-'",
+                args[0], args[0]
             );
             process::exit(1);
         }
         // Correct usage with one argument
-        2..=3 => {
+        2..=4 => {
             let path = Path::new(&args[1]);
             if !path.exists() {
                 eprintln!("Error: Directory '{}' does not exist", args[1]);
@@ -86,29 +86,39 @@ fn validate_input_args() -> (String, String) {
                 eprintln!("Error: '{}' is not a directory", args[1]);
                 process::exit(1);
             }
-            match args.get(2) {
-                Some(_) => (args[1].clone(), args[2].clone()),
-                None => (args[1].clone(), ".csv".to_string()),
-            }
+            
+            let extension = match args.get(2) {
+                Some(_) => args[2].clone(),
+                None => ".csv".to_string(),
+            };
+
+            let filter = match args.get(3) {
+                Some(_) => args[3].clone(),
+                None => "".to_string(),
+            };
+            (args[1].clone(), extension, filter)
         }
         // Too many arguments
         _ => {
             eprintln!("Error: Too many arguments");
             eprintln!(
-                "Usage: {} <directory_path> <optional_file_extension>",
-                args[0]
+                "Usage: {} <directory_path> <optional_file_extension> <optional_inputs_filter> \n e.g. {} /path/to/directory .csv nexus- \n to only process files that start with 'nexus-'",
+                args[0],args[0]
             );
             process::exit(1);
         }
     }
 }
 
-fn count_files_by_base_name(dir_path: &str) -> HashMap<String, usize> {
+fn count_files_by_base_name(dir_path: &str, file_filter: &str) -> HashMap<String, usize> {
     let mut counts = HashMap::new();
     if let Ok(paths) = fs::read_dir(dir_path) {
         for entry in paths.filter_map(Result::ok) {
             if let Ok(filename) = entry.file_name().into_string() {
                 if let Some(base_name) = filename.split("_").next() {
+                    if !file_filter.is_empty() && !base_name.starts_with(file_filter) {
+                        continue;
+                    }
                     *counts.entry(base_name.to_string()).or_insert(0) += 1;
                 }
             }
